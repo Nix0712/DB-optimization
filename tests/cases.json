@@ -94,5 +94,100 @@
       "scan_Student_access_path": "idx_student_ime_hash",
       "scan_Student_cost": 2
     }
+  },
+  {
+    "id": "cross_join_no_predicate",
+    "description": "Two tables with no join condition -> Cartesian product",
+    "query": "SELECT Student.indeks, Predmet.naziv FROM Student, Predmet",
+    "expected": {
+      "root_operation": "Projection",
+      "join_count": 1,
+      "total_cost_positive": true
+    }
+  },
+  {
+    "id": "four_table_join",
+    "description": "Four table join -> three JoinNodes",
+    "query": "SELECT Student.ime, Predmet.naziv, Ispit.ocena, Stipendija.iznos FROM Student, Ispit, Predmet, Stipendija WHERE Student.indeks = Ispit.studentIndeks AND Ispit.predmetId = Predmet.predmetId AND Student.indeks = Stipendija.studentIndeks",
+    "expected": {
+      "root_operation": "Projection",
+      "join_count": 3,
+      "total_cost_positive": true
+    }
+  },
+  {
+    "id": "two_selections_same_table",
+    "description": "Conjunction of two selections on one table -> combined selectivity",
+    "query": "SELECT Student.indeks FROM Student WHERE Student.smer = IN AND Student.godinaUpisa = 2020",
+    "expected": {
+      "root_operation": "Projection",
+      "scan_Student_out_rows": 20
+    }
+  },
+  {
+    "id": "literal_literal_condition_skipped",
+    "description": "5 = 5 is literal-literal -> skipped, table gets full scan",
+    "query": "SELECT Student.indeks FROM Student WHERE 5 = 5",
+    "expected": {
+      "root_operation": "Projection",
+      "scan_Student_algorithm": "Full Scan"
+    }
+  },
+  {
+    "id": "same_table_both_attributes",
+    "description": "A.x = A.y (both attrs, same table) -> selection, not join",
+    "query": "SELECT Student.indeks FROM Student WHERE Student.prosek = Student.godinaUpisa",
+    "expected": {
+      "root_operation": "Projection",
+      "join_count": 0
+    }
+  },
+  {
+    "id": "literal_on_left_side",
+    "description": "Literal on the left of a selection -> left side not attribute branch",
+    "query": "SELECT Student.prosek FROM Student WHERE 8.5 < Student.prosek",
+    "expected": {
+      "root_operation": "Projection",
+      "scan_Student_algorithm": "Full Scan"
+    }
+  },
+  {
+    "id": "hash_index_range_unusable",
+    "description": "Range on hash-indexed attr -> hash skipped, full scan",
+    "query": "SELECT Student.ime FROM Student WHERE Student.ime > M",
+    "expected": {
+      "root_operation": "Projection",
+      "scan_Student_algorithm": "Full Scan"
+    }
+  },
+  {
+    "id": "clustered_bplus_range",
+    "description": "Range on clustered B+ key -> A5: h + out_blocks",
+    "query": "SELECT Student.indeks FROM Student WHERE Student.indeks > S500",
+    "expected": {
+      "root_operation": "Projection",
+      "scan_Student_algorithm": "B+ Tree Index",
+      "scan_Student_access_path": "idx_student_indeks_clustered",
+      "scan_Student_cost": 53
+    }
+  },
+  {
+    "id": "secondary_bplus_range",
+    "description": "Range on secondary B+ -> A6 computed but full scan cheaper",
+    "query": "SELECT Ispit.studentIndeks FROM Ispit WHERE Ispit.studentIndeks > S500",
+    "expected": {
+      "root_operation": "Projection",
+      "scan_Ispit_algorithm": "Full Scan"
+    }
+  },
+  {
+    "id": "join_on_non_indexed_attr",
+    "description": "Join attribute with no index on one side -> index NL not viable there",
+    "query": "SELECT Student.indeks, Ispit.ocena FROM Student, Ispit WHERE Student.smer = Ispit.ocena",
+    "expected": {
+      "root_operation": "Projection",
+      "join_count": 1,
+      "total_cost_positive": true
+    }
   }
 ]

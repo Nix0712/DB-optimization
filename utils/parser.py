@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Optional
 
 _MAXIMUM_NUM_OF_CONDITIONS=6
+_MAXIMUM_NUM_OF_TABLES=4
 
 class CmpOperators(str, Enum):
     EQ = "=" # Equal
@@ -61,6 +62,17 @@ class ParsedQuery:
     conditions: list[Condition]
     order_by: Optional[OrderBy] = None
 
+    @staticmethod
+    def _split_optional(text: str, token: ClauseLexTokens):
+        '''Split off an optional trailing clause.
+
+        Returns (before, after) where `after` is the stripped clause body, or
+        None if the token is absent.
+        '''
+        parts = text.split(token)
+        after = parts[1].strip() if len(parts) > 1 else None
+        return parts[0], after
+
     def __init__(self, raw_string):
         self.tables = []
         self.conditions = []
@@ -98,19 +110,16 @@ class ParsedQuery:
 
         # The FROM segment ends where WHERE or ORDER BY begins.
         # Peel off ORDER BY first, then WHERE, so what's left is just the tables.
-        order_split = after_from.split(ClauseLexTokens.ORDER_BY)
-        after_from = order_split[0]
-        order_by_raw = order_split[1].strip() if len(order_split) > 1 else None
-
-        where_split = after_from.split(ClauseLexTokens.WHERE)
-        from_raw = where_split[0]
-        where_raw = where_split[1].strip() if len(where_split) > 1 else None
+        after_from, order_by_raw = self._split_optional(after_from, ClauseLexTokens.ORDER_BY)
+        from_raw,   where_raw    = self._split_optional(after_from, ClauseLexTokens.WHERE)
 
         raw_tables = [t.strip() for t in from_raw.split(',')]
         if any(t == "" for t in raw_tables):
             raise ValueError("FROM has an empty table name")
-        if len(raw_tables) > 4:
-            raise ValueError("Query can be over maximum 4 tables")
+        if len(raw_tables) > _MAXIMUM_NUM_OF_TABLES:
+            raise ValueError(
+                f"Query can be over at most {_MAXIMUM_NUM_OF_TABLES} tables"
+            )
 
         self.tables = raw_tables
 

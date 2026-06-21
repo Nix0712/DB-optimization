@@ -42,8 +42,8 @@ class Optimizer:
                 continue  # literal-literal condition, skip
 
             if left_is_attr and right_is_attr:
-                left_table  = cond.left_side.split(".")[0]
-                right_table = cond.right_side.split(".")[0]
+                left_table  = self._table(cond.left_side)
+                right_table = self._table(cond.right_side)
 
                 if left_table == right_table:
                     self.selections[left_table].append(cond)
@@ -51,8 +51,7 @@ class Optimizer:
                     self.join_conditions.append(cond)
             else:
                 attr_side = cond.left_side if left_is_attr else cond.right_side
-                table = attr_side.split(".")[0]
-                self.selections[table].append(cond)
+                self.selections[self._table(attr_side)].append(cond)
 
     # -------------------------------------------------------------------------
     # Helpers
@@ -66,12 +65,21 @@ class Optimizer:
             return False
         return not value.split(".")[0].lstrip("-").isdigit()
 
+    @staticmethod
+    def _table(ref: str) -> str:
+        '''"Student.prosek" -> "Student"'''
+        return ref.split(".")[0]
+
+    @staticmethod
+    def _attr(ref: str) -> str:
+        '''"Student.prosek" -> "prosek"'''
+        return ref.split(".")[1]
+
     def _selectivity(self, cond: Condition, table_name: str) -> float:
         '''Returns fraction of rows surviving one condition (0.0 to 1.0).'''
         table = self.dbs.get_table(table_name)
         attr_side = cond.left_side if self._is_attribute(cond.left_side) else cond.right_side
-        attr_name = attr_side.split(".")[1]
-        attr = table.get_attribute(attr_name)
+        attr = table.get_attribute(self._attr(attr_side))
 
         if cond.operator == CmpOperators.EQ:
             if attr.unique:
@@ -97,6 +105,21 @@ class Optimizer:
     # Access path selection
     # -------------------------------------------------------------------------
 
+    def _index_equality_cost(self, index, attr, out_rows: int, out_blocks: int) -> int:
+        '''Cost of reaching rows through `index` for an equality match.
+
+        Shared by access-path selection and index nested loop join.
+        '''
+        if index.type == IndexType.HASH:
+            return 2                                   # hash bucket + one read
+        # B+ tree
+        h = index.treeHeight
+        if attr.unique:
+            return h + 1                               # A2 / A4-key: one record
+        if index.clustered:
+            return h + out_blocks                      # A3: matching blocks contiguous
+        return h + out_rows                            # A4-nonkey: 1 block per row
+
     def _best_scan(self, table_name: str) -> ScanNode:
         '''Picks cheapest access path for a table and returns a costed ScanNode.'''
         table = self.dbs.get_table(table_name)
@@ -113,7 +136,7 @@ class Optimizer:
         for cond in conds:
             if not self._is_attribute(cond.left_side):
                 continue
-            attr_name = cond.left_side.split(".")[1]
+            attr_name = self._attr(cond.left_side)
             attr      = table.get_attribute(attr_name)
 
             for index in table.indexes:
@@ -122,22 +145,15 @@ class Optimizer:
 
                 if index.type == IndexType.HASH:
                     if not is_equality(cond):
-                        continue
-                    cost = 2  # hash bucket + one read
-                elif index.type == IndexType.B_PLUS_TREE:
-                    h = index.treeHeight
-                    if index.clustered:
-                        if is_equality(cond):
-                            cost = h + 1 if attr.unique else h + out_blocks   # A2 / A3
-                        else:
-                            cost = h + out_blocks                               # A5
+                        continue                                       # hash: equality only
+                    cost = self._index_equality_cost(index, attr, out_rows, out_blocks)
+                else:  # B+ tree
+                    if is_equality(cond):
+                        cost = self._index_equality_cost(index, attr, out_rows, out_blocks)
+                    elif index.clustered:
+                        cost = index.treeHeight + out_blocks            # A5: range, contiguous scan
                     else:
-                        if is_equality(cond):
-                            cost = h + 1 if attr.unique else h + out_rows      # A4-key / A4-nonkey
-                        else:
-                            cost = h + out_rows                                 # A6
-                else:
-                    continue
+                        cost = index.treeHeight + out_rows             # A6: range on secondary
 
                 if cost < best_cost:
                     best_cost  = cost
@@ -211,32 +227,22 @@ class Optimizer:
         if cond is None or not isinstance(inner, ScanNode):
             return float('inf')
 
-        l_tbl = cond.left_side.split(".")[0]
-        r_tbl = cond.right_side.split(".")[0]
-
-        if l_tbl == inner.table:
-            inner_attr = cond.left_side.split(".")[1]
-        elif r_tbl == inner.table:
-            inner_attr = cond.right_side.split(".")[1]
+        if self._table(cond.left_side) == inner.table:
+            inner_attr = self._attr(cond.left_side)
+        elif self._table(cond.right_side) == inner.table:
+            inner_attr = self._attr(cond.right_side)
         else:
             return float('inf')
 
         inner_table = self.dbs.get_table(inner.table)
+        attr        = inner_table.get_attribute(inner_attr)
+        inner_blocks = max(1, inner.out_rows // inner_table.rowsPerBlock)
         best_c = float('inf')
 
         for index in inner_table.indexes:
             if index.attributes[0] != inner_attr:
                 continue
-            attr = inner_table.get_attribute(inner_attr)
-            if index.type == IndexType.HASH:
-                c = 2
-            elif index.type == IndexType.B_PLUS_TREE:
-                if attr.unique:
-                    c = index.treeHeight + 1
-                elif index.clustered:
-                    c = index.treeHeight + max(1, inner.out_rows // inner_table.rowsPerBlock)
-                else:
-                    c = index.treeHeight + inner.out_rows
+            c = self._index_equality_cost(index, attr, inner.out_rows, inner_blocks)
             best_c = min(best_c, c)
 
         if best_c == float('inf'):
@@ -302,8 +308,8 @@ class Optimizer:
                         right_table: str) -> Optional[Condition]:
         '''Find the join condition linking the right table to the left subtree.'''
         for cond in self.join_conditions:
-            l = cond.left_side.split(".")[0]
-            r = cond.right_side.split(".")[0]
+            l = self._table(cond.left_side)
+            r = self._table(cond.right_side)
             if (l in left_tables and r == right_table) or \
                (r in left_tables and l == right_table):
                 return cond

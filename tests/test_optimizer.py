@@ -117,3 +117,53 @@ def test_optimizer_case(db, case):
             assert scan.out_rows == value, (
                 f"{table_name} out_rows: expected {value}, got {scan.out_rows}"
             )
+
+
+# --- Targeted cases requiring custom schema / direct calls -------------------
+
+def test_clustered_nonunique_equality_A3():
+    """Clustered B+ index on a non-unique attr, equality -> A3: h + out_blocks."""
+    db = DBStatistics(TEST_DIR / "inputs" / "clustered.json")
+    query = ParsedQuery("SELECT T.k FROM T WHERE T.k = 5")
+    plan = Optimizer(dbs=db, query=query).optimize()
+    scan = find_scan(plan, "T")
+    # k: 10 distinct, 1000 rows -> 100 matching rows -> 10 blocks; cost = h(3)+10 = 13
+    assert scan.algorithm.value == "B+ Tree Index"
+    assert scan.cost == 13
+
+
+def test_index_nested_loop_cond_unrelated_to_inner(db):
+    """_cost_index_nested_loop returns inf when cond involves neither inner table."""
+    from utils.parser import Condition
+    opt   = Optimizer(dbs=db, query=ParsedQuery("SELECT Student.indeks FROM Student"))
+    inner = ScanNode(table="Student", out_rows=1000, out_blocks=100)
+    outer = ScanNode(table="Ispit",   out_rows=8000, out_blocks=800)
+    cond  = Condition.from_string("Predmet.predmetId = Stipendija.stipendijaId")
+    assert opt._cost_index_nested_loop(outer, inner, cond) == float("inf")
+
+
+def test_index_nested_loop_no_index_on_join_attr(db):
+    """_cost_index_nested_loop returns inf when inner has no index on the join attr."""
+    from utils.parser import Condition
+    opt   = Optimizer(dbs=db, query=ParsedQuery("SELECT Ispit.ocena FROM Ispit"))
+    inner = ScanNode(table="Ispit",   out_rows=8000, out_blocks=800)
+    outer = ScanNode(table="Student", out_rows=1000, out_blocks=100)
+    cond  = Condition.from_string("Student.smer = Ispit.ocena")  # ocena has no index
+    assert opt._cost_index_nested_loop(outer, inner, cond) == float("inf")
+
+
+def test_index_nested_loop_inner_not_scan(db):
+    """_cost_index_nested_loop returns inf when inner is not a base-table scan."""
+    from utils.parser import Condition
+    opt   = Optimizer(dbs=db, query=ParsedQuery("SELECT Student.indeks FROM Student"))
+    inner = JoinNode(out_rows=100, out_blocks=10)        # intermediate, not a ScanNode
+    outer = ScanNode(table="Student", out_rows=1000, out_blocks=100)
+    cond  = Condition.from_string("Student.indeks = Ispit.studentIndeks")
+    assert opt._cost_index_nested_loop(outer, inner, cond) == float("inf")
+
+
+def test_base_node_describe_default():
+    """Base PlanNode._describe returns empty string (default hook)."""
+    from utils.plan import PlanNode, Operation, Algorithm
+    node = PlanNode(operation=Operation.SCAN, algorithm=Algorithm.FULL_SCAN)
+    assert node._describe() == ""

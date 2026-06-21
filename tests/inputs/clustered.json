@@ -1,0 +1,19 @@
+{
+  "bufferBlocks": 10,
+  "schema": {
+    "tables": [
+      {
+        "name": "T",
+        "rowCount": 1000,
+        "blockCount": 100,
+        "rowsPerBlock": 10,
+        "attributes": [
+          { "name": "k", "type": "INT", "unique": false, "distinctValues": 10 }
+        ],
+        "indexes": [
+          { "name": "idx_k_clustered", "attributes": ["k"], "type": "B_PLUS_TREE", "clustered": true, "treeHeight": 3 }
+        ]
+      }
+    ]
+  }
+}
