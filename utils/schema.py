@@ -29,15 +29,15 @@ class IndexType(Enum):
     HASH = "HASH"
 
 @dataclass
-class Atributes:
+class Attribute:
     name: str
     type: DataType
     unique: bool
     distinctValues: int
 
     @staticmethod
-    def from_dict(d: dict) -> "Atributes":
-        return Atributes(
+    def from_dict(d: dict) -> "Attribute":
+        return Attribute(
             name=d["name"],
             type=DataType(d["type"]),
             unique=d["unique"],
@@ -71,12 +71,12 @@ class DataIndex:
         
 @dataclass
 class TableMetadata:
-    "Tabel Atributes"
+    "Tabel Attributes"
     name: str
     rowCount: int
     blockCount: int
     rowsPerBlock: int
-    attributes: list[Atributes]
+    attributes: list[Attribute]
     indexes: list[DataIndex]
 
     @staticmethod
@@ -86,7 +86,7 @@ class TableMetadata:
             rowCount=d["rowCount"],
             blockCount=d["blockCount"],
             rowsPerBlock=d["rowsPerBlock"],
-            attributes=[Atributes.from_dict(a) for a in d["attributes"]],
+            attributes=[Attribute.from_dict(a) for a in d["attributes"]],
             indexes=[DataIndex.from_dict(i) for i in d["indexes"]],
         )
 
@@ -126,7 +126,7 @@ class Database:
     def __init__(self, json_path):
         json_db_stats = self.__load_json(Path(json_path))
 
-        # Fill atributes from table
+        # Fill Attributes from table
         self.__fill_tables(json_db_stats)        
 
     def __fill_tables(self, json_stats):
