@@ -90,6 +90,13 @@ class TableMetadata:
             indexes=[DataIndex.from_dict(i) for i in d["indexes"]],
         )
 
+    def get_attribute(self, name: str) -> Attribute:
+        for a in self.attributes:
+            if a.name == name:
+                return a
+        available = [a.name for a in self.attributes]
+        raise ValueError(f"Attribute '{name}' not found in table '{self.name}'. Available: {available}")
+
     def __str__(self) -> str:
         attr_rows = [
             (a.name, a.type.value, "yes" if a.unique else "no", a.distinctValues)
@@ -118,7 +125,7 @@ class TableMetadata:
 
 
 @dataclass
-class Database:
+class DBStatistics:
     "Top-level input: buffer size + all tables"
     bufferBlocks: int
     tables: list[TableMetadata]
@@ -134,6 +141,13 @@ class Database:
         self.tables = [
             TableMetadata.from_dict(t) for t in json_stats["schema"]["tables"]
         ]
+
+    def get_table(self, name: str) -> TableMetadata:
+        for t in self.tables:
+            if t.name == name:
+                return t
+        available = [t.name for t in self.tables]
+        raise ValueError(f"Table '{name}' not found in schema. Available: {available}")
 
     # Fancy way to print info
     def __str__(self) -> str:

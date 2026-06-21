@@ -1,0 +1,98 @@
+[
+  {
+    "id": "single_table_unique_key",
+    "description": "Equality on unique clustered B+ key -> A2: h+1=4, 1 row",
+    "query": "SELECT Student.indeks FROM Student WHERE Student.indeks = S123",
+    "expected": {
+      "root_operation": "Projection",
+      "scan_Student_algorithm": "B+ Tree Index",
+      "scan_Student_access_path": "idx_student_indeks_clustered",
+      "scan_Student_cost": 4,
+      "scan_Student_out_rows": 1
+    }
+  },
+  {
+    "id": "single_table_range_full_scan",
+    "description": "Range on non-clustered attr -> full scan cheaper than A6",
+    "query": "SELECT Student.prosek FROM Student WHERE Student.prosek > 8.5",
+    "expected": {
+      "root_operation": "Projection",
+      "scan_Student_algorithm": "Full Scan",
+      "scan_Student_cost": 100,
+      "scan_Student_out_rows": 500
+    }
+  },
+  {
+    "id": "single_table_no_where",
+    "description": "No WHERE -> full scan of table",
+    "query": "SELECT Student.ime FROM Student",
+    "expected": {
+      "root_operation": "Projection",
+      "scan_Student_algorithm": "Full Scan",
+      "scan_Student_cost": 100,
+      "scan_Student_out_rows": 1000
+    }
+  },
+  {
+    "id": "two_table_join",
+    "description": "Two table join -> plan root is Projection wrapping a Join",
+    "query": "SELECT Student.indeks, Ispit.ocena FROM Student, Ispit WHERE Student.indeks = Ispit.studentIndeks",
+    "expected": {
+      "root_operation": "Projection",
+      "join_count": 1,
+      "total_cost_positive": true
+    }
+  },
+  {
+    "id": "two_table_join_with_filter",
+    "description": "Join with selection pushed down to Student",
+    "query": "SELECT Student.indeks, Ispit.ocena FROM Student, Ispit WHERE Student.indeks = Ispit.studentIndeks AND Student.prosek > 8.5",
+    "expected": {
+      "root_operation": "Projection",
+      "scan_Student_out_rows": 500,
+      "join_count": 1,
+      "total_cost_positive": true
+    }
+  },
+  {
+    "id": "order_by",
+    "description": "ORDER BY -> root must be SortNode",
+    "query": "SELECT Student.indeks FROM Student, Ispit WHERE Student.indeks = Ispit.studentIndeks ORDER BY Student.indeks",
+    "expected": {
+      "root_operation": "Sort",
+      "root_attribute": "Student.indeks",
+      "join_count": 1,
+      "total_cost_positive": true
+    }
+  },
+  {
+    "id": "three_table_join",
+    "description": "Three table join -> two JoinNodes in tree",
+    "query": "SELECT Student.indeks, Predmet.naziv FROM Student, Ispit, Predmet WHERE Student.indeks = Ispit.studentIndeks AND Ispit.predmetId = Predmet.predmetId",
+    "expected": {
+      "root_operation": "Projection",
+      "join_count": 2,
+      "total_cost_positive": true
+    }
+  },
+  {
+    "id": "select_star",
+    "description": "SELECT * expands to all attributes of the queried table",
+    "query": "SELECT * FROM Student",
+    "expected": {
+      "root_operation": "Projection",
+      "projection_attr_count": 5
+    }
+  },
+  {
+    "id": "hash_index_equality",
+    "description": "Equality on hash-indexed attr -> hash index used (cost=2)",
+    "query": "SELECT Student.ime FROM Student WHERE Student.ime = Ana",
+    "expected": {
+      "root_operation": "Projection",
+      "scan_Student_algorithm": "Hash Index",
+      "scan_Student_access_path": "idx_student_ime_hash",
+      "scan_Student_cost": 2
+    }
+  }
+]
