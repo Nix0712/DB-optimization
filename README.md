@@ -73,5 +73,5 @@ tests/             pytest suite
 ## Tests
 
 ```bash
-pytest
+pytest   # This will run full test suite
 ```
